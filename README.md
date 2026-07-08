@@ -2,7 +2,7 @@
 
 An AI-powered dashboard that forecasts household energy demand, segments customers by usage pattern, and generates optimization insights — built on real London smart meter data.
 
-**🔗 Live Demo:** [Add your deployment link here]
+**🔗 Live Demo:** [https://autonomous-energy-optimization-platform.streamlit.app/]
 
 ---
 
