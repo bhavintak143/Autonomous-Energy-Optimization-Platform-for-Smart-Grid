@@ -18,10 +18,10 @@ Follow these steps in order:
    ```
 
 3. **Run the notebook first**
-   Open `Autonomous_Energy_Optimization_Platform.ipynb` and execute all cells from top to bottom.
-   This step trains the forecasting model and automatically creates an `outputs/` folder containing the following three files:
+   Open `main.ipynb` and execute all cells from top to bottom.
+   This step trains the forecasting model and automatically creates an `outputs/` folder containing:
    - `energy_forecast_model.pkl`
-   - `cleaned_merged_energy_data.csv`
+   - `cleaned_merged_energy_data.csv.gz`
    - `household_usage_groups.csv`
 
    > ⚠️ The dashboard will not run without these files, so this step must be completed first.
@@ -31,7 +31,7 @@ Follow these steps in order:
    ```bash
    streamlit run app.py
    ```
-   Ensure the `outputs/` folder is placed in the same directory as `app.py`.
+   By default, `app.py` looks for the `outputs/` folder alongside itself. If yours lives elsewhere, open the sidebar's **⚙️ Advanced: data source** panel and point it to the correct path.
 
 ```
 Autonomous Energy Optimization Platform for Smart Grid/
@@ -39,10 +39,9 @@ Autonomous Energy Optimization Platform for Smart Grid/
 ├── app.py
 ├── requirements.txt
 ├── README.md
-├── DATA_SET.zip
 └── outputs/
     ├── energy_forecast_model.pkl
-    ├── cleaned_merged_energy_data.csv
+    ├── cleaned_merged_energy_data.csv.gz
     └── household_usage_groups.csv
 ```
 
@@ -69,15 +68,13 @@ Autonomous Energy Optimization Platform for Smart Grid/
 
 ### 📥 Getting the Dataset
 
-The raw dataset (`DATA_SET.zip`) is included in this project. To use it:
+The raw dataset isn't included in this repo (it's a few GB, well past what's practical to version control). To get it:
 
-1. Extract `DATA_SET.zip` into the project's root folder.
-2. Point the notebook's data-loading cells to the extracted folder path.
+1. Download it from Kaggle: 👉 [https://www.kaggle.com/datasets/jeanmidev/smart-meters-in-london](https://www.kaggle.com/datasets/jeanmidev/smart-meters-in-london)
+2. Extract it into a `DATA_SET` folder in the project root.
+3. Point the notebook's data-loading cell (`base_folder`) to that extracted folder.
 
-Alternatively, download the dataset directly from Kaggle:
-👉 [https://www.kaggle.com/datasets/jeanmidev/smart-meters-in-london](https://www.kaggle.com/datasets/jeanmidev/smart-meters-in-london)
-
-> ⚠️ A free Kaggle account is required to download the dataset. Once downloaded, extract it into the project folder before running the notebook.
+> ⚠️ A free Kaggle account is required to download the dataset.
 
 ---
 
@@ -86,7 +83,5 @@ Alternatively, download the dataset directly from Kaggle:
 - Python, Pandas, NumPy, Scikit-learn (Random Forest)
 - Streamlit + Plotly for the interactive dashboard
 - Open-Meteo API for live weather forecasting
-- 
----
 
-## 📧 Contact:** [bhavintak8863@gmail.com]
+---

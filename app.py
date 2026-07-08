@@ -2,22 +2,6 @@
 ===============================================================================
  AUTONOMOUS ENERGY OPTIMIZATION PLATFORM FOR SMART GRID  —  app.py
 ===============================================================================
-PRODUCTION-STYLE STREAMLIT DASHBOARD
--------------------------------------------------------------------------------
-Architecture (top to bottom, mirrors how you'd explain it in an interview):
-
-  1. CONFIG & STYLING       -> page setup, CSS (incl. pure-CSS 3D animation)
-  2. DATA LAYER              -> cached loaders for model.pkl / csv artifacts
-  3. ML LAYER                -> metrics, feature importance, prediction helper
-  4. EXTERNAL API LAYER      -> Open-Meteo weather (the ONLY internet calls)
-  5. UI COMPONENTS           -> reusable widgets (metric cards, info boxes)
-  6. SIDEBAR (CONTROL PANEL) -> ALL interactive parameters live here
-  7. MAIN DASHBOARD          -> tabs render the *outputs* of sidebar controls
-
-No new dependencies are required beyond what the notebook already produces —
-everything visual (including the 3D cube animation) is plain CSS, so nothing
-extra needs to be installed.
-===============================================================================
 """
 
 import os
@@ -176,7 +160,7 @@ FEATURE_COLUMNS = [
     "humidity", "windSpeed", "cloudCover",
 ]
 
-DEFAULT_OUTPUT_DIR = "outputs"
+DEFAULT_OUTPUT_DIR = r"C:\Users\Administrator\Documents\Autonomous Energy Optimization Platform for Smart Grid\outputs"
 MODEL_FILE = "energy_forecast_model.pkl"
 MERGED_FILE = "cleaned_merged_energy_data.csv"
 PROFILE_FILE = "household_usage_groups.csv"
