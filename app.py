@@ -143,6 +143,30 @@ CUSTOM_CSS = """
         background: linear-gradient(135deg, #1ba69d, #147a71);
     }
 
+    /* ---------- Force sidebar collapse/expand arrow to always stay visible ---------- */
+    button[data-testid="collapsedControl"] {
+        visibility: visible !important;
+        display: flex !important;
+        opacity: 1 !important;
+        pointer-events: auto !important;
+        z-index: 999999 !important;
+        position: fixed !important;
+        top: 0.6rem !important;
+        left: 0.6rem !important;
+        background: linear-gradient(135deg, #14807a, #0e5c56) !important;
+        border: 1px solid #2fd9c4 !important;
+        border-radius: 8px !important;
+        box-shadow: 0 0 10px rgba(47,217,196,0.35) !important;
+        transition: opacity 0.15s ease;
+    }
+    button[data-testid="collapsedControl"]:hover {
+        background: linear-gradient(135deg, #1ba69d, #147a71) !important;
+    }
+    button[data-testid="collapsedControl"] svg {
+        color: #eaf6ff !important;
+        fill: #eaf6ff !important;
+    }
+
     /* ---------- Responsive tweaks ---------- */
     @media (max-width: 768px) {
         .hero { padding: 1.2rem 1.3rem; }
