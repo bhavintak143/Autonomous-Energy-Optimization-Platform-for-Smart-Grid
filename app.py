@@ -14,6 +14,7 @@ import requests
 import numpy as np
 import pandas as pd
 import streamlit as st
+import streamlit.components.v1 as components
 import plotly.express as px
 import plotly.graph_objects as go
 from sklearn.model_selection import train_test_split
@@ -138,40 +139,6 @@ CUSTOM_CSS = """
         background: linear-gradient(135deg, #1ba69d, #147a71);
     }
 
-    button[data-testid="collapsedControl"],
-    button[data-testid="stSidebarCollapsedControl"],
-    div[data-testid="collapsedControl"] {
-        visibility: visible !important;
-        display: flex !important;
-        opacity: 1 !important;
-        pointer-events: auto !important;
-    }
-
-    #sg-sidebar-toggle {
-        position: fixed;
-        top: 0.7rem;
-        left: 0.7rem;
-        z-index: 999999;
-        width: 38px;
-        height: 38px;
-        border-radius: 8px;
-        background: linear-gradient(135deg, #14807a, #0e5c56);
-        border: 1px solid #2fd9c4;
-        box-shadow: 0 0 10px rgba(47,217,196,0.35);
-        color: #eaf6ff;
-        font-size: 18px;
-        font-weight: 700;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        cursor: pointer;
-        user-select: none;
-        transition: background 0.15s ease;
-    }
-    #sg-sidebar-toggle:hover {
-        background: linear-gradient(135deg, #1ba69d, #147a71);
-    }
-
     @media (max-width: 768px) {
         .hero { padding: 1.2rem 1.3rem; }
         .hero h1 { font-size: 1.5rem; }
@@ -182,25 +149,57 @@ CUSTOM_CSS = """
 """
 st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
 
-SIDEBAR_TOGGLE_HTML = """
-<div id="sg-sidebar-toggle" title="Show / hide sidebar">☰</div>
+SIDEBAR_TOGGLE_INJECTOR = """
 <script>
-    function sgFindNativeToggle() {
-        return window.parent.document.querySelector('button[data-testid="collapsedControl"]')
-            || window.parent.document.querySelector('button[data-testid="stSidebarCollapsedControl"]')
-            || window.parent.document.querySelector('[data-testid="stSidebarNav"] button')
-            || window.parent.document.querySelector('section[data-testid="stSidebar"] button[kind="header"]');
+(function() {
+    var parentDoc = window.parent.document;
+    if (parentDoc.getElementById('sg-sidebar-toggle')) { return; }
+
+    var btn = parentDoc.createElement('div');
+    btn.id = 'sg-sidebar-toggle';
+    btn.innerText = '☰';
+    btn.title = 'Show / hide sidebar';
+    btn.style.position = 'fixed';
+    btn.style.top = '0.7rem';
+    btn.style.left = '0.7rem';
+    btn.style.zIndex = 999999;
+    btn.style.width = '38px';
+    btn.style.height = '38px';
+    btn.style.borderRadius = '8px';
+    btn.style.background = 'linear-gradient(135deg, #14807a, #0e5c56)';
+    btn.style.border = '1px solid #2fd9c4';
+    btn.style.boxShadow = '0 0 10px rgba(47,217,196,0.35)';
+    btn.style.color = '#eaf6ff';
+    btn.style.fontSize = '18px';
+    btn.style.fontWeight = '700';
+    btn.style.display = 'flex';
+    btn.style.alignItems = 'center';
+    btn.style.justifyContent = 'center';
+    btn.style.cursor = 'pointer';
+    btn.style.userSelect = 'none';
+
+    btn.addEventListener('mouseenter', function() {
+        btn.style.background = 'linear-gradient(135deg, #1ba69d, #147a71)';
+    });
+    btn.addEventListener('mouseleave', function() {
+        btn.style.background = 'linear-gradient(135deg, #14807a, #0e5c56)';
+    });
+
+    function findNativeToggle() {
+        return parentDoc.querySelector('button[data-testid="collapsedControl"]')
+            || parentDoc.querySelector('button[data-testid="stSidebarCollapsedControl"]')
+            || parentDoc.querySelector('section[data-testid="stSidebar"] button[kind="header"]');
     }
 
-    function sgToggleSidebar() {
-        let btn = sgFindNativeToggle();
-        if (btn) {
-            btn.click();
+    btn.addEventListener('click', function() {
+        var nativeBtn = findNativeToggle();
+        if (nativeBtn) {
+            nativeBtn.click();
             return;
         }
-        let sidebar = window.parent.document.querySelector('section[data-testid="stSidebar"]');
+        var sidebar = parentDoc.querySelector('section[data-testid="stSidebar"]');
         if (sidebar) {
-            let expanded = sidebar.getAttribute('aria-expanded');
+            var expanded = sidebar.getAttribute('aria-expanded');
             if (expanded === 'true') {
                 sidebar.setAttribute('aria-expanded', 'false');
                 sidebar.style.marginLeft = '-350px';
@@ -209,12 +208,13 @@ SIDEBAR_TOGGLE_HTML = """
                 sidebar.style.marginLeft = '0px';
             }
         }
-    }
+    });
 
-    document.getElementById('sg-sidebar-toggle').addEventListener('click', sgToggleSidebar);
+    parentDoc.body.appendChild(btn);
+})();
 </script>
 """
-st.markdown(SIDEBAR_TOGGLE_HTML, unsafe_allow_html=True)
+components.html(SIDEBAR_TOGGLE_INJECTOR, height=0, width=0)
 
 FEATURE_COLUMNS = [
     "day_of_week", "is_weekend", "month", "is_holiday",
