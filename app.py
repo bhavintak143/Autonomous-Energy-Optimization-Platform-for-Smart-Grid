@@ -1,9 +1,12 @@
 """
-===============================================================================
- AUTONOMOUS ENERGY OPTIMIZATION PLATFORM FOR SMART GRID  —  app.py
-===============================================================================
-"""
 
+===============================================================================
+
+ AUTONOMOUS ENERGY OPTIMIZATION PLATFORM FOR SMART GRID  —  app.py
+
+===============================================================================
+
+"""
 import os
 import datetime as dt
 import joblib
@@ -16,9 +19,6 @@ import plotly.graph_objects as go
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 
-# ==============================================================================
-# 1. CONFIG & STYLING
-# ==============================================================================
 st.set_page_config(
     page_title="Autonomous Energy Optimization Platform | Smart Grid",
     page_icon="⚡",
@@ -35,14 +35,11 @@ CUSTOM_CSS = """
     h1, h2, h3, h4 { color: #e6f1ff; font-family: 'Segoe UI', sans-serif; }
     p, li, span, label, .stMarkdown { color: #c7d2e0; }
 
-    /* ---------- Ambient glow on hero ---------- */
     @keyframes glow {
         0%   { box-shadow: 0 0 18px rgba(47,217,196,0.15); }
         50%  { box-shadow: 0 0 30px rgba(47,217,196,0.35); }
         100% { box-shadow: 0 0 18px rgba(47,217,196,0.15); }
     }
-
-    /* ---------- Animated "energy flow" backdrop on hero ---------- */
     @keyframes flow {
         0%   { background-position: 0% 50%; }
         100% { background-position: 200% 50%; }
@@ -66,7 +63,6 @@ CUSTOM_CSS = """
         border-radius: 999px; color: #2fd9c4; font-size: 0.75rem; letter-spacing: 0.03em;
     }
 
-    /* ---------- Pure-CSS 3D rotating cube logo (sidebar) ---------- */
     .cube-scene { perspective: 700px; width: 64px; height: 64px; margin: 4px auto 14px auto; }
     .cube {
         width: 64px; height: 64px; position: relative;
@@ -93,7 +89,6 @@ CUSTOM_CSS = """
     }
     .cube-caption { text-align: center; color: #6fd3c7; font-size: 0.72rem; letter-spacing: 0.05em; margin-top: -8px; margin-bottom: 10px; text-transform: uppercase; }
 
-    /* ---------- Metric cards ---------- */
     .metric-card {
         background: linear-gradient(160deg, #101c33 0%, #0d1830 100%);
         border: 1px solid #1f3b57;
@@ -143,31 +138,40 @@ CUSTOM_CSS = """
         background: linear-gradient(135deg, #1ba69d, #147a71);
     }
 
-    /* ---------- Force sidebar collapse/expand arrow to always stay visible ---------- */
-    button[data-testid="collapsedControl"] {
+    button[data-testid="collapsedControl"],
+    button[data-testid="stSidebarCollapsedControl"],
+    div[data-testid="collapsedControl"] {
         visibility: visible !important;
         display: flex !important;
         opacity: 1 !important;
         pointer-events: auto !important;
-        z-index: 999999 !important;
-        position: fixed !important;
-        top: 0.6rem !important;
-        left: 0.6rem !important;
-        background: linear-gradient(135deg, #14807a, #0e5c56) !important;
-        border: 1px solid #2fd9c4 !important;
-        border-radius: 8px !important;
-        box-shadow: 0 0 10px rgba(47,217,196,0.35) !important;
-        transition: opacity 0.15s ease;
-    }
-    button[data-testid="collapsedControl"]:hover {
-        background: linear-gradient(135deg, #1ba69d, #147a71) !important;
-    }
-    button[data-testid="collapsedControl"] svg {
-        color: #eaf6ff !important;
-        fill: #eaf6ff !important;
     }
 
-    /* ---------- Responsive tweaks ---------- */
+    #sg-sidebar-toggle {
+        position: fixed;
+        top: 0.7rem;
+        left: 0.7rem;
+        z-index: 999999;
+        width: 38px;
+        height: 38px;
+        border-radius: 8px;
+        background: linear-gradient(135deg, #14807a, #0e5c56);
+        border: 1px solid #2fd9c4;
+        box-shadow: 0 0 10px rgba(47,217,196,0.35);
+        color: #eaf6ff;
+        font-size: 18px;
+        font-weight: 700;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        user-select: none;
+        transition: background 0.15s ease;
+    }
+    #sg-sidebar-toggle:hover {
+        background: linear-gradient(135deg, #1ba69d, #147a71);
+    }
+
     @media (max-width: 768px) {
         .hero { padding: 1.2rem 1.3rem; }
         .hero h1 { font-size: 1.5rem; }
@@ -177,6 +181,40 @@ CUSTOM_CSS = """
 </style>
 """
 st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
+
+SIDEBAR_TOGGLE_HTML = """
+<div id="sg-sidebar-toggle" title="Show / hide sidebar">☰</div>
+<script>
+    function sgFindNativeToggle() {
+        return window.parent.document.querySelector('button[data-testid="collapsedControl"]')
+            || window.parent.document.querySelector('button[data-testid="stSidebarCollapsedControl"]')
+            || window.parent.document.querySelector('[data-testid="stSidebarNav"] button')
+            || window.parent.document.querySelector('section[data-testid="stSidebar"] button[kind="header"]');
+    }
+
+    function sgToggleSidebar() {
+        let btn = sgFindNativeToggle();
+        if (btn) {
+            btn.click();
+            return;
+        }
+        let sidebar = window.parent.document.querySelector('section[data-testid="stSidebar"]');
+        if (sidebar) {
+            let expanded = sidebar.getAttribute('aria-expanded');
+            if (expanded === 'true') {
+                sidebar.setAttribute('aria-expanded', 'false');
+                sidebar.style.marginLeft = '-350px';
+            } else {
+                sidebar.setAttribute('aria-expanded', 'true');
+                sidebar.style.marginLeft = '0px';
+            }
+        }
+    }
+
+    document.getElementById('sg-sidebar-toggle').addEventListener('click', sgToggleSidebar);
+</script>
+"""
+st.markdown(SIDEBAR_TOGGLE_HTML, unsafe_allow_html=True)
 
 FEATURE_COLUMNS = [
     "day_of_week", "is_weekend", "month", "is_holiday",
@@ -189,13 +227,9 @@ MODEL_FILE = "energy_forecast_model.pkl"
 MERGED_FILE = "cleaned_merged_energy_data.csv.gz"
 PROFILE_FILE = "household_usage_groups.csv"
 
-# Fixed-date UK holidays — lightweight fallback for future forecast dates
 FIXED_UK_HOLIDAYS = {(1, 1), (12, 25), (12, 26)}
 
 
-# ==============================================================================
-# 2. DATA LAYER  (reads local artifacts produced by the training notebook)
-# ==============================================================================
 @st.cache_resource(show_spinner=False)
 def load_model(path):
     return joblib.load(path)
@@ -216,9 +250,6 @@ def load_house_profile(path):
     return df.rename(columns={id_col: "LCLid"})
 
 
-# ==============================================================================
-# 3. ML LAYER
-# ==============================================================================
 @st.cache_data(show_spinner=False)
 def compute_model_metrics(_model, merged_data):
     model_data = merged_data.dropna(subset=FEATURE_COLUMNS + ["energy_sum"])
@@ -283,14 +314,10 @@ def build_energy_tips(group_summary, forecast_mae, peak_hour=None):
 
 
 def predict_scenario(model, params):
-    """Runs the trained model on a single what-if scenario dict -> float kWh."""
     row = pd.DataFrame([params])[FEATURE_COLUMNS]
     return float(model.predict(row)[0])
 
 
-# ==============================================================================
-# 4. EXTERNAL API LAYER — Open-Meteo (the ONLY internet calls in this app)
-# ==============================================================================
 @st.cache_data(ttl=3600, show_spinner=False)
 def geocode_city(city_name):
     url = "https://geocoding-api.open-meteo.com/v1/search"
@@ -332,9 +359,6 @@ def fetch_weather_forecast(lat, lon, days=7):
 
 
 def recursive_forecast(model, weather_daily, last_known_energy):
-    """Day-by-day forecast: each day's prediction feeds into the next day's
-    'energy_yesterday' feature. Consumes weather already fetched above —
-    does not call the API itself."""
     rows = []
     energy_yesterday = last_known_energy
     for _, row in weather_daily.iterrows():
@@ -356,9 +380,6 @@ def recursive_forecast(model, weather_daily, last_known_energy):
     return pd.DataFrame(rows)
 
 
-# ==============================================================================
-# 5. UI COMPONENTS
-# ==============================================================================
 def metric_card(col, label, value, sub=""):
     col.markdown(
         f"""<div class="metric-card">
@@ -371,7 +392,6 @@ def metric_card(col, label, value, sub=""):
 
 
 def beginner_box(text):
-    """Plain-English explainer shown only when Beginner Mode is on."""
     if st.session_state.get("beginner_mode", True):
         st.markdown(f"<div class='beginner-box'>📘 <b>In plain English:</b> {text}</div>", unsafe_allow_html=True)
 
@@ -395,16 +415,12 @@ def cube_logo():
     )
 
 
-# ==============================================================================
-# 6. SIDEBAR — CONTROL PANEL (every interactive parameter lives here)
-# ==============================================================================
 with st.sidebar:
     cube_logo()
     st.markdown("### ⚡ Control Panel")
 
     st.session_state["beginner_mode"] = st.toggle("🧠 Beginner explanations", value=True)
 
-    # --- Data source: resolved automatically, no path clutter shown up front ---
     output_dir = DEFAULT_OUTPUT_DIR
     with st.expander("⚙️ Advanced: data source", expanded=False):
         output_dir = st.text_input("Outputs folder", value=DEFAULT_OUTPUT_DIR)
@@ -448,7 +464,6 @@ with st.sidebar:
     city = st.text_input("City", value="London")
     run_forecast = st.button("🔮 Get 7-Day Forecast", use_container_width=True)
 
-# Stop early with a friendly message if the model/data artifacts aren't present
 if missing_any:
     st.markdown(
         """<div class="hero">
@@ -461,9 +476,6 @@ if missing_any:
     st.stop()
 
 
-# ==============================================================================
-# LOAD EVERYTHING (cached, so this is instant after the first run)
-# ==============================================================================
 with st.spinner("Loading model and data..."):
     model = load_model(model_path)
     merged_data = load_merged_data(merged_path)
@@ -488,13 +500,9 @@ tips = build_energy_tips(group_summary, metrics["mae"], peak_hour)
 n_households = merged_data["LCLid"].nunique() if "LCLid" in merged_data.columns else house_profile.shape[0]
 avg_daily_energy = merged_data["energy_sum"].mean() if "energy_sum" in merged_data.columns else np.nan
 
-# Live scenario prediction — recalculated on every rerun (i.e. every slider move)
 scenario_prediction = predict_scenario(model, scenario_params)
 
 
-# ==============================================================================
-# 7. MAIN DASHBOARD
-# ==============================================================================
 st.markdown(
     """<div class="hero">
         <h1>⚡ Autonomous Energy Optimization Platform</h1>
@@ -524,9 +532,6 @@ tab_trends, tab_model, tab_clusters, tab_tips, tab_live, tab_export = st.tabs(
      "💡 Optimization Insights", "🔮 Live Forecast", "📤 Export Report"]
 )
 
-# ------------------------------------------------------------------------
-# TAB: Trends & Scenario — sidebar changes are visible here immediately
-# ------------------------------------------------------------------------
 with tab_trends:
     st.markdown("##### 🎯 Your Scenario vs. Historical Average")
     beginner_box(
@@ -608,9 +613,6 @@ with tab_trends:
         fig.update_traces(line_color="#ff6b6b")
         st.plotly_chart(fig, use_container_width=True)
 
-# ------------------------------------------------------------------------
-# TAB: Model Performance
-# ------------------------------------------------------------------------
 with tab_model:
     m1, m2, m3 = st.columns(3)
     metric_card(m1, "MAE", f"{metrics['mae']:.3f} kWh")
@@ -642,9 +644,6 @@ with tab_model:
         "The right chart ranks which inputs matter most to the model — try changing the top one in the sidebar!"
     )
 
-# ------------------------------------------------------------------------
-# TAB: Household Clusters
-# ------------------------------------------------------------------------
 with tab_clusters:
     c1, c2 = st.columns([1, 1.3])
     with c1:
@@ -675,9 +674,6 @@ with tab_clusters:
                  color_discrete_sequence=["#2fd9c4", "#ff9f5b"])
     st.plotly_chart(fig, use_container_width=True)
 
-# ------------------------------------------------------------------------
-# TAB: Optimization Insights
-# ------------------------------------------------------------------------
 with tab_tips:
     st.markdown("##### Plain-English Optimization Insights")
     for i, tip in enumerate(tips, start=1):
@@ -685,9 +681,6 @@ with tab_tips:
     tips_text = "\n".join(f"{i}. {t}" for i, t in enumerate(tips, start=1))
     st.download_button("⬇️ Download insights as .txt", tips_text, file_name="energy_optimization_insights.txt")
 
-# ------------------------------------------------------------------------
-# TAB: Live Forecast — results of the sidebar's "Get 7-Day Forecast" button
-# ------------------------------------------------------------------------
 with tab_live:
     st.caption(f"Live forecast for **{city}** — triggered from the sidebar.")
 
@@ -745,9 +738,6 @@ with tab_live:
     else:
         st.info("Enter a city and click **🔮 Get 7-Day Forecast** in the sidebar to generate a live projection.")
 
-# ------------------------------------------------------------------------
-# TAB: Export Report
-# ------------------------------------------------------------------------
 with tab_export:
     st.markdown("##### Export a snapshot of this dashboard")
 
