@@ -14,12 +14,12 @@ import requests
 import numpy as np
 import pandas as pd
 import streamlit as st
-import streamlit.components.v1 as components
 import plotly.express as px
 import plotly.graph_objects as go
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 
+# --- Page config & styling ---
 st.set_page_config(
     page_title="Autonomous Energy Optimization Platform | Smart Grid",
     page_icon="⚡",
@@ -32,7 +32,17 @@ CUSTOM_CSS = """
     .stApp {
         background: radial-gradient(circle at 20% 0%, #10233b 0%, #0b1120 45%, #0b1120 100%);
     }
-    #MainMenu, footer, header {visibility: hidden;}
+
+    /* FIX: only hide the hamburger menu and footer. Do NOT hide the whole
+       header — Streamlit's sidebar expand/collapse arrow lives inside the
+       header element, so hiding the header also hid that button and made
+       it unreachable after any rerun. Header is now just transparent. */
+    #MainMenu {visibility: hidden;}
+    footer {visibility: hidden;}
+    header[data-testid="stHeader"] {
+        background: transparent;
+    }
+
     h1, h2, h3, h4 { color: #e6f1ff; font-family: 'Segoe UI', sans-serif; }
     p, li, span, label, .stMarkdown { color: #c7d2e0; }
 
@@ -41,6 +51,7 @@ CUSTOM_CSS = """
         50%  { box-shadow: 0 0 30px rgba(47,217,196,0.35); }
         100% { box-shadow: 0 0 18px rgba(47,217,196,0.15); }
     }
+
     @keyframes flow {
         0%   { background-position: 0% 50%; }
         100% { background-position: 200% 50%; }
@@ -149,73 +160,6 @@ CUSTOM_CSS = """
 """
 st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
 
-SIDEBAR_TOGGLE_INJECTOR = """
-<script>
-(function() {
-    var parentDoc = window.parent.document;
-    if (parentDoc.getElementById('sg-sidebar-toggle')) { return; }
-
-    var btn = parentDoc.createElement('div');
-    btn.id = 'sg-sidebar-toggle';
-    btn.innerText = '☰';
-    btn.title = 'Show / hide sidebar';
-    btn.style.position = 'fixed';
-    btn.style.top = '0.7rem';
-    btn.style.left = '0.7rem';
-    btn.style.zIndex = 999999;
-    btn.style.width = '38px';
-    btn.style.height = '38px';
-    btn.style.borderRadius = '8px';
-    btn.style.background = 'linear-gradient(135deg, #14807a, #0e5c56)';
-    btn.style.border = '1px solid #2fd9c4';
-    btn.style.boxShadow = '0 0 10px rgba(47,217,196,0.35)';
-    btn.style.color = '#eaf6ff';
-    btn.style.fontSize = '18px';
-    btn.style.fontWeight = '700';
-    btn.style.display = 'flex';
-    btn.style.alignItems = 'center';
-    btn.style.justifyContent = 'center';
-    btn.style.cursor = 'pointer';
-    btn.style.userSelect = 'none';
-
-    btn.addEventListener('mouseenter', function() {
-        btn.style.background = 'linear-gradient(135deg, #1ba69d, #147a71)';
-    });
-    btn.addEventListener('mouseleave', function() {
-        btn.style.background = 'linear-gradient(135deg, #14807a, #0e5c56)';
-    });
-
-    function findNativeToggle() {
-        return parentDoc.querySelector('button[data-testid="collapsedControl"]')
-            || parentDoc.querySelector('button[data-testid="stSidebarCollapsedControl"]')
-            || parentDoc.querySelector('section[data-testid="stSidebar"] button[kind="header"]');
-    }
-
-    btn.addEventListener('click', function() {
-        var nativeBtn = findNativeToggle();
-        if (nativeBtn) {
-            nativeBtn.click();
-            return;
-        }
-        var sidebar = parentDoc.querySelector('section[data-testid="stSidebar"]');
-        if (sidebar) {
-            var expanded = sidebar.getAttribute('aria-expanded');
-            if (expanded === 'true') {
-                sidebar.setAttribute('aria-expanded', 'false');
-                sidebar.style.marginLeft = '-350px';
-            } else {
-                sidebar.setAttribute('aria-expanded', 'true');
-                sidebar.style.marginLeft = '0px';
-            }
-        }
-    });
-
-    parentDoc.body.appendChild(btn);
-})();
-</script>
-"""
-components.html(SIDEBAR_TOGGLE_INJECTOR, height=0, width=0)
-
 FEATURE_COLUMNS = [
     "day_of_week", "is_weekend", "month", "is_holiday",
     "energy_yesterday", "temperatureMax", "temperatureMin",
@@ -230,6 +174,7 @@ PROFILE_FILE = "household_usage_groups.csv"
 FIXED_UK_HOLIDAYS = {(1, 1), (12, 25), (12, 26)}
 
 
+# --- Data layer ---
 @st.cache_resource(show_spinner=False)
 def load_model(path):
     return joblib.load(path)
@@ -250,6 +195,7 @@ def load_house_profile(path):
     return df.rename(columns={id_col: "LCLid"})
 
 
+# --- ML layer ---
 @st.cache_data(show_spinner=False)
 def compute_model_metrics(_model, merged_data):
     model_data = merged_data.dropna(subset=FEATURE_COLUMNS + ["energy_sum"])
@@ -318,6 +264,7 @@ def predict_scenario(model, params):
     return float(model.predict(row)[0])
 
 
+# --- External API layer (Open-Meteo) ---
 @st.cache_data(ttl=3600, show_spinner=False)
 def geocode_city(city_name):
     url = "https://geocoding-api.open-meteo.com/v1/search"
@@ -380,6 +327,7 @@ def recursive_forecast(model, weather_daily, last_known_energy):
     return pd.DataFrame(rows)
 
 
+# --- UI components ---
 def metric_card(col, label, value, sub=""):
     col.markdown(
         f"""<div class="metric-card">
@@ -415,6 +363,7 @@ def cube_logo():
     )
 
 
+# --- Sidebar ---
 with st.sidebar:
     cube_logo()
     st.markdown("### ⚡ Control Panel")
@@ -503,6 +452,7 @@ avg_daily_energy = merged_data["energy_sum"].mean() if "energy_sum" in merged_da
 scenario_prediction = predict_scenario(model, scenario_params)
 
 
+# --- Main dashboard ---
 st.markdown(
     """<div class="hero">
         <h1>⚡ Autonomous Energy Optimization Platform</h1>
