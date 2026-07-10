@@ -165,6 +165,14 @@ PROFILE_FILE = "household_usage_groups.csv"
 FIXED_UK_HOLIDAYS = {(1, 1), (12, 25), (12, 26)}
 
 
+# --- Custom exceptions so weather-API failures never turn into a raw,
+#     uncaught crash that takes the whole app down ---
+class WeatherAPIError(Exception):
+    """Raised whenever the weather/geocoding service returns something we
+    can't use, so calling code can catch this specifically."""
+    pass
+
+
 # --- Data layer ---
 @st.cache_resource(show_spinner=False)
 def load_model(path):
@@ -259,13 +267,29 @@ def predict_scenario(model, params):
 @st.cache_data(ttl=3600, show_spinner=False)
 def geocode_city(city_name):
     url = "https://geocoding-api.open-meteo.com/v1/search"
-    resp = requests.get(url, params={"name": city_name, "count": 1}, timeout=10)
-    resp.raise_for_status()
-    data = resp.json()
+    try:
+        resp = requests.get(url, params={"name": city_name, "count": 1}, timeout=15)
+        resp.raise_for_status()
+    except requests.exceptions.RequestException as e:
+        raise WeatherAPIError(f"Could not reach the geocoding service: {e}") from e
+
+    try:
+        data = resp.json()
+    except ValueError as e:
+        raise WeatherAPIError("The geocoding service returned an invalid response.") from e
+
     if not data.get("results"):
         return None
+
     r = data["results"][0]
-    return {"lat": r["latitude"], "lon": r["longitude"], "label": f"{r['name']}, {r.get('country', '')}"}
+    # FIX: use .get() for every field instead of direct indexing, so a
+    # slightly different response shape can't raise an uncaught KeyError.
+    lat = r.get("latitude")
+    lon = r.get("longitude")
+    if lat is None or lon is None:
+        raise WeatherAPIError("The geocoding service response was missing coordinates.")
+
+    return {"lat": lat, "lon": lon, "label": f"{r.get('name', city_name)}, {r.get('country', '')}"}
 
 
 @st.cache_data(ttl=1800, show_spinner=False)
@@ -276,12 +300,37 @@ def fetch_weather_forecast(lat, lon, days=7):
         "hourly": "temperature_2m,relativehumidity_2m,windspeed_10m,cloudcover",
         "forecast_days": days, "timezone": "auto",
     }
-    resp = requests.get(url, params=params, timeout=10)
-    resp.raise_for_status()
-    data = resp.json()["hourly"]
+    try:
+        resp = requests.get(url, params=params, timeout=15)
+        resp.raise_for_status()
+    except requests.exceptions.RequestException as e:
+        raise WeatherAPIError(f"Could not reach the weather forecast service: {e}") from e
+
+    try:
+        payload = resp.json()
+    except ValueError as e:
+        raise WeatherAPIError("The weather service returned an invalid response.") from e
+
+    # FIX: this is the key crash source in the original app. If Open-Meteo
+    # is rate-limited, mis-configured, or returns an error payload, the
+    # "hourly" key won't be present and `data["hourly"]` used to raise a
+    # bare KeyError that wasn't caught anywhere -> whole app crashed.
+    if "hourly" not in payload:
+        reason = payload.get("reason", "no 'hourly' field in the response")
+        raise WeatherAPIError(f"The weather service didn't return forecast data ({reason}).")
+
+    data = payload["hourly"]
     df = pd.DataFrame(data)
+    if df.empty or "time" not in df.columns:
+        raise WeatherAPIError("The weather service returned an empty forecast for this location.")
+
     df["time"] = pd.to_datetime(df["time"])
     df["date"] = df["time"].dt.date
+
+    required_cols = {"temperature_2m", "relativehumidity_2m", "windspeed_10m", "cloudcover"}
+    missing_cols = required_cols - set(df.columns)
+    if missing_cols:
+        raise WeatherAPIError(f"The weather service response was missing fields: {', '.join(missing_cols)}")
 
     daily = df.groupby("date").agg(
         temperatureMax=("temperature_2m", "max"),
@@ -297,6 +346,11 @@ def fetch_weather_forecast(lat, lon, days=7):
 
 
 def recursive_forecast(model, weather_daily, last_known_energy):
+    # FIX: guard against an empty weather dataframe so callers never get an
+    # empty forecast_df that later crashes on .idxmax()/.mean().
+    if weather_daily is None or weather_daily.empty:
+        raise WeatherAPIError("No weather data available to build a forecast.")
+
     rows = []
     energy_yesterday = last_known_energy
     for _, row in weather_daily.iterrows():
@@ -626,6 +680,11 @@ with tab_live:
     st.caption(f"Live forecast for **{city}** — triggered from the sidebar.")
 
     if run_forecast:
+        # FIX: this is the block that used to crash the whole app. It now
+        # catches WeatherAPIError (raised deliberately by the helper
+        # functions for anything unexpected in the API response), plus a
+        # final catch-all Exception, so a bad API response always shows a
+        # friendly red error box instead of taking the site down.
         try:
             with st.spinner("Fetching live weather and running the model..."):
                 loc = geocode_city(city)
@@ -636,8 +695,10 @@ with tab_live:
                     last_known_energy = merged_data.sort_values("day")["energy_sum"].tail(7).mean()
                     forecast_df = recursive_forecast(model, weather_daily, last_known_energy)
                     st.session_state["last_forecast"] = (loc, forecast_df)
-        except requests.exceptions.RequestException as e:
-            st.error(f"Could not reach the weather service: {e}")
+        except WeatherAPIError as e:
+            st.error(f"⚠️ Live forecast unavailable right now: {e}")
+        except Exception as e:
+            st.error(f"⚠️ Something unexpected went wrong generating the forecast: {e}")
 
     if "last_forecast" in st.session_state:
         loc, forecast_df = st.session_state["last_forecast"]
