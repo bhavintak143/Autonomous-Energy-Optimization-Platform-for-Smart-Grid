@@ -1,12 +1,3 @@
-"""
-
-===============================================================================
-
- AUTONOMOUS ENERGY OPTIMIZATION PLATFORM FOR SMART GRID  —  app.py
-
-===============================================================================
-
-"""
 import os
 import datetime as dt
 import joblib
