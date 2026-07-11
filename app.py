@@ -165,14 +165,6 @@ PROFILE_FILE = "household_usage_groups.csv"
 FIXED_UK_HOLIDAYS = {(1, 1), (12, 25), (12, 26)}
 
 
-# --- Custom exceptions so weather-API failures never turn into a raw,
-#     uncaught crash that takes the whole app down ---
-class WeatherAPIError(Exception):
-    """Raised whenever the weather/geocoding service returns something we
-    can't use, so calling code can catch this specifically."""
-    pass
-
-
 # --- Data layer ---
 @st.cache_resource(show_spinner=False)
 def load_model(path):
@@ -267,77 +259,29 @@ def predict_scenario(model, params):
 @st.cache_data(ttl=3600, show_spinner=False)
 def geocode_city(city_name):
     url = "https://geocoding-api.open-meteo.com/v1/search"
-    try:
-        resp = requests.get(url, params={"name": city_name, "count": 1}, timeout=15)
-        resp.raise_for_status()
-    except requests.exceptions.RequestException as e:
-        raise WeatherAPIError(f"Could not reach the geocoding service: {e}") from e
-
-    try:
-        data = resp.json()
-    except ValueError as e:
-        raise WeatherAPIError("The geocoding service returned an invalid response.") from e
-
+    resp = requests.get(url, params={"name": city_name, "count": 1}, timeout=10)
+    resp.raise_for_status()
+    data = resp.json()
     if not data.get("results"):
         return None
-
     r = data["results"][0]
-    # FIX: use .get() for every field instead of direct indexing, so a
-    # slightly different response shape can't raise an uncaught KeyError.
-    lat = r.get("latitude")
-    lon = r.get("longitude")
-    if lat is None or lon is None:
-        raise WeatherAPIError("The geocoding service response was missing coordinates.")
-
-    return {"lat": lat, "lon": lon, "label": f"{r.get('name', city_name)}, {r.get('country', '')}"}
+    return {"lat": r["latitude"], "lon": r["longitude"], "label": f"{r['name']}, {r.get('country', '')}"}
 
 
 @st.cache_data(ttl=1800, show_spinner=False)
 def fetch_weather_forecast(lat, lon, days=7):
     url = "https://api.open-meteo.com/v1/forecast"
-    # FIX (root cause of the Live Forecast tab failing every time): Open-Meteo
-    # renamed these hourly variables a while back. The old names
-    # ("relativehumidity_2m", "windspeed_10m", "cloudcover") are no longer
-    # accepted and the API responds with an HTTP 400 error, which meant this
-    # call failed on literally every request. Using the current variable
-    # names fixes it.
     params = {
         "latitude": lat, "longitude": lon,
         "hourly": "temperature_2m,relative_humidity_2m,wind_speed_10m,cloud_cover",
         "forecast_days": days, "timezone": "auto",
     }
-    try:
-        resp = requests.get(url, params=params, timeout=15)
-        resp.raise_for_status()
-    except requests.exceptions.RequestException as e:
-        raise WeatherAPIError(f"Could not reach the weather forecast service: {e}") from e
-
-    try:
-        payload = resp.json()
-    except ValueError as e:
-        raise WeatherAPIError("The weather service returned an invalid response.") from e
-
-    # FIX: this is the key crash source in the original app. If Open-Meteo
-    # is rate-limited, mis-configured, or returns an error payload, the
-    # "hourly" key won't be present and `data["hourly"]` used to raise a
-    # bare KeyError that wasn't caught anywhere -> whole app crashed.
-    if "hourly" not in payload:
-        reason = payload.get("reason", "no 'hourly' field in the response")
-        raise WeatherAPIError(f"The weather service didn't return forecast data ({reason}).")
-
-    data = payload["hourly"]
+    resp = requests.get(url, params=params, timeout=10)
+    resp.raise_for_status()
+    data = resp.json()["hourly"]
     df = pd.DataFrame(data)
-    if df.empty or "time" not in df.columns:
-        raise WeatherAPIError("The weather service returned an empty forecast for this location.")
-
     df["time"] = pd.to_datetime(df["time"])
     df["date"] = df["time"].dt.date
-
-    # FIX: updated to match the renamed Open-Meteo fields used in the request above.
-    required_cols = {"temperature_2m", "relative_humidity_2m", "wind_speed_10m", "cloud_cover"}
-    missing_cols = required_cols - set(df.columns)
-    if missing_cols:
-        raise WeatherAPIError(f"The weather service response was missing fields: {', '.join(missing_cols)}")
 
     daily = df.groupby("date").agg(
         temperatureMax=("temperature_2m", "max"),
@@ -353,11 +297,6 @@ def fetch_weather_forecast(lat, lon, days=7):
 
 
 def recursive_forecast(model, weather_daily, last_known_energy):
-    # FIX: guard against an empty weather dataframe so callers never get an
-    # empty forecast_df that later crashes on .idxmax()/.mean().
-    if weather_daily is None or weather_daily.empty:
-        raise WeatherAPIError("No weather data available to build a forecast.")
-
     rows = []
     energy_yesterday = last_known_energy
     for _, row in weather_daily.iterrows():
@@ -491,25 +430,10 @@ if hh_upload is not None:
     time_col = "tstp" if "tstp" in hh_df.columns else hh_df.columns[1]
     hh_df[time_col] = pd.to_datetime(hh_df[time_col], errors="coerce")
     hh_df["hour"] = hh_df[time_col].dt.hour
-
-    # FIX: this used to be
-    #   energy_col = [c for c in hh_df.columns if "energy" in c.lower()][0]
-    # which throws an uncaught IndexError (crashing the whole app) if the
-    # uploaded file has no column containing "energy". Now we check first
-    # and show a friendly warning instead of crashing.
-    energy_candidates = [c for c in hh_df.columns if "energy" in c.lower()]
-    if not energy_candidates:
-        st.sidebar.error(
-            "⚠️ Couldn't find an energy column in that file — expected a column "
-            "with 'energy' in its name (e.g. 'energy_kwh'). Peak-hour insights "
-            "won't be available for this upload."
-        )
-    else:
-        energy_col = energy_candidates[0]
-        hh_df[energy_col] = pd.to_numeric(hh_df[energy_col], errors="coerce")
-        hourly_pattern = hh_df.groupby("hour")[energy_col].mean()
-        if not hourly_pattern.empty:
-            peak_hour = hourly_pattern.idxmax()
+    energy_col = [c for c in hh_df.columns if "energy" in c.lower()][0]
+    hh_df[energy_col] = pd.to_numeric(hh_df[energy_col], errors="coerce")
+    hourly_pattern = hh_df.groupby("hour")[energy_col].mean()
+    peak_hour = hourly_pattern.idxmax()
 
 tips = build_energy_tips(group_summary, metrics["mae"], peak_hour)
 
@@ -702,10 +626,6 @@ with tab_live:
     st.caption(f"Live forecast for **{city}** — triggered from the sidebar.")
 
     if run_forecast:
-        # This block catches WeatherAPIError (raised deliberately by the helper
-        # functions for anything unexpected in the API response), plus a
-        # final catch-all Exception, so a bad API response always shows a
-        # friendly red error box instead of taking the site down.
         try:
             with st.spinner("Fetching live weather and running the model..."):
                 loc = geocode_city(city)
@@ -716,59 +636,46 @@ with tab_live:
                     last_known_energy = merged_data.sort_values("day")["energy_sum"].tail(7).mean()
                     forecast_df = recursive_forecast(model, weather_daily, last_known_energy)
                     st.session_state["last_forecast"] = (loc, forecast_df)
-        except WeatherAPIError as e:
-            st.error(f"⚠️ Live forecast unavailable right now: {e}")
-        except Exception as e:
-            st.error(f"⚠️ Something unexpected went wrong generating the forecast: {e}")
+        except requests.exceptions.RequestException as e:
+            st.error(f"Could not reach the weather service: {e}")
 
     if "last_forecast" in st.session_state:
-        # FIX: this whole display block used to sit outside any try/except.
-        # It re-runs on *every* app rerun (e.g. moving a sidebar slider),
-        # not just after clicking the forecast button, so any bad cached
-        # value (NaNs, an empty frame, an odd dtype) would crash the whole
-        # app on every subsequent interaction instead of just failing once.
-        # Wrapping it means a bad cached forecast degrades gracefully and
-        # can be dismissed/retried instead of freezing the app.
-        try:
-            loc, forecast_df = st.session_state["last_forecast"]
-            st.success(f"Forecast generated for **{loc['label']}**")
+        loc, forecast_df = st.session_state["last_forecast"]
+        st.success(f"Forecast generated for **{loc['label']}**")
 
-            f1, f2, f3 = st.columns(3)
-            metric_card(f1, "7-Day Avg Predicted Energy", f"{forecast_df['predicted_energy'].mean():.2f} kWh")
-            peak_row = forecast_df.loc[forecast_df["predicted_energy"].idxmax()]
-            metric_card(f2, "Predicted Peak Day", peak_row["date"].strftime("%a %d %b"),
-                        f"{peak_row['predicted_energy']:.2f} kWh")
-            metric_card(f3, "±Model Error Margin", f"{metrics['mae']:.2f} kWh")
-            beginner_box(
-                "This tab pulls a real 7-day weather forecast for your chosen city and feeds it into the "
-                "trained model, one day at a time, to project future household energy demand."
-            )
+        f1, f2, f3 = st.columns(3)
+        metric_card(f1, "7-Day Avg Predicted Energy", f"{forecast_df['predicted_energy'].mean():.2f} kWh")
+        peak_row = forecast_df.loc[forecast_df["predicted_energy"].idxmax()]
+        metric_card(f2, "Predicted Peak Day", peak_row["date"].strftime("%a %d %b"),
+                    f"{peak_row['predicted_energy']:.2f} kWh")
+        metric_card(f3, "±Model Error Margin", f"{metrics['mae']:.2f} kWh")
+        beginner_box(
+            "This tab pulls a real 7-day weather forecast for your chosen city and feeds it into the "
+            "trained model, one day at a time, to project future household energy demand."
+        )
 
-            fig = go.Figure()
-            fig.add_trace(go.Scatter(
-                x=forecast_df["date"], y=forecast_df["predicted_energy"] + metrics["mae"],
-                line=dict(width=0), showlegend=False))
-            fig.add_trace(go.Scatter(
-                x=forecast_df["date"], y=forecast_df["predicted_energy"] - metrics["mae"],
-                fill="tonexty", fillcolor="rgba(47,217,196,0.15)", line=dict(width=0),
-                name="Error margin"))
-            fig.add_trace(go.Scatter(
-                x=forecast_df["date"], y=forecast_df["predicted_energy"],
-                mode="lines+markers", line=dict(color="#2fd9c4", width=3),
-                name="Predicted energy"))
-            fig.update_layout(template="plotly_dark", title=f"7-Day Energy Demand Projection — {loc['label']}",
-                               xaxis_title="Date", yaxis_title="Predicted Avg Energy (kWh)")
-            st.plotly_chart(fig, use_container_width=True)
+        fig = go.Figure()
+        fig.add_trace(go.Scatter(
+            x=forecast_df["date"], y=forecast_df["predicted_energy"] + metrics["mae"],
+            line=dict(width=0), showlegend=False))
+        fig.add_trace(go.Scatter(
+            x=forecast_df["date"], y=forecast_df["predicted_energy"] - metrics["mae"],
+            fill="tonexty", fillcolor="rgba(47,217,196,0.15)", line=dict(width=0),
+            name="Error margin"))
+        fig.add_trace(go.Scatter(
+            x=forecast_df["date"], y=forecast_df["predicted_energy"],
+            mode="lines+markers", line=dict(color="#2fd9c4", width=3),
+            name="Predicted energy"))
+        fig.update_layout(template="plotly_dark", title=f"7-Day Energy Demand Projection — {loc['label']}",
+                           xaxis_title="Date", yaxis_title="Predicted Avg Energy (kWh)")
+        st.plotly_chart(fig, use_container_width=True)
 
-            st.dataframe(
-                forecast_df[["date", "predicted_energy", "temperatureMax", "temperatureMin", "humidity", "windSpeed", "cloudCover"]]
-                .style.format({"predicted_energy": "{:.2f}", "temperatureMax": "{:.1f}", "temperatureMin": "{:.1f}",
-                               "humidity": "{:.2f}", "windSpeed": "{:.1f}", "cloudCover": "{:.2f}"}),
-                use_container_width=True,
-            )
-        except Exception as e:
-            st.error(f"⚠️ Couldn't display the cached forecast ({e}). Click **🔮 Get 7-Day Forecast** again to refresh it.")
-            del st.session_state["last_forecast"]
+        st.dataframe(
+            forecast_df[["date", "predicted_energy", "temperatureMax", "temperatureMin", "humidity", "windSpeed", "cloudCover"]]
+            .style.format({"predicted_energy": "{:.2f}", "temperatureMax": "{:.1f}", "temperatureMin": "{:.1f}",
+                           "humidity": "{:.2f}", "windSpeed": "{:.1f}", "cloudCover": "{:.2f}"}),
+            use_container_width=True,
+        )
     else:
         st.info("Enter a city and click **🔮 Get 7-Day Forecast** in the sidebar to generate a live projection.")
 
